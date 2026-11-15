@@ -1,0 +1,587 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL HELPERS ---
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() &&
+        request.auth.token.email == 'smmservicehelpcentre@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() || (
+        isVerifiedUser() &&
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isUserActive(userId) {
+      return exists(/databases/$(database)/documents/users/$(userId)) &&
+        get(/databases/$(database)/documents/users/$(userId)).data.status != 'blocked';
+    }
+
+    // --- VALIDATION BLUEPRINTS ---
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'fullName', 'username', 'email', 'status', 'emailVerified', 'language', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'fullName', 'username', 'mobile', 'email', 'referralCode', 'myReferralCode', 'photoURL', 'status', 'emailVerified', 'language', 'activeGroupName', 'createdAt', 'updatedAt']) &&
+        isValidId(data.uid) &&
+        data.fullName is string && data.fullName.size() >= 1 && data.fullName.size() <= 100 &&
+        data.username is string && data.username.size() >= 3 && data.username.size() <= 40 && data.username.matches('^[a-zA-Z0-9_.-]+$') &&
+        (!('mobile' in data) || (data.mobile is string && data.mobile.size() <= 25)) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+        (!('referralCode' in data) || (data.referralCode is string && data.referralCode.size() <= 32)) &&
+        (!('myReferralCode' in data) || (data.myReferralCode is string && data.myReferralCode.size() >= 4 && data.myReferralCode.size() <= 32)) &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+        data.status in ['active', 'pending', 'blocked', 'inactive'] &&
+        data.emailVerified is bool &&
+        data.language in ['en', 'bn'] &&
+        (!('activeGroupName' in data) || (data.activeGroupName is string && data.activeGroupName.size() <= 80)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRole(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+        data.keys().hasOnly(['uid', 'email', 'role', 'permissions', 'createdAt']) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() >= 3 && data.email.size() <= 150 &&
+        data.role in ['super_admin', 'moderator', 'finance_admin'] &&
+        (!('permissions' in data) || (data.permissions is list && data.permissions.size() <= 20 && (data.permissions.size() == 0 || data.permissions[0] is string))) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidWallet(data) {
+      return data.keys().hasAll(['userId', 'availableBalance', 'pendingBalance', 'totalEarned', 'totalWithdrawn', 'totalDeposited', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'availableBalance', 'pendingBalance', 'totalEarned', 'totalWithdrawn', 'totalDeposited', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        data.availableBalance is number && data.availableBalance >= 0 &&
+        data.pendingBalance is number && data.pendingBalance >= 0 &&
+        data.totalEarned is number && data.totalEarned >= 0 &&
+        data.totalWithdrawn is number && data.totalWithdrawn >= 0 &&
+        data.totalDeposited is number && data.totalDeposited >= 0 &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['title', 'groupName', 'groupNameKey', 'tiktokUsername', 'tiktokUrl', 'instructions', 'taskType', 'commission', 'startDate', 'deadline', 'status', 'assignMode', 'assignedUserIds', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['title', 'groupName', 'groupNameKey', 'tiktokUsername', 'tiktokUrl', 'instructions', 'taskType', 'commission', 'startDate', 'deadline', 'status', 'assignMode', 'assignedUserIds', 'createdBy', 'createdAt', 'updatedAt']) &&
+        data.title is string && data.title.size() >= 2 && data.title.size() <= 140 &&
+        data.groupName is string && data.groupName.size() >= 1 && data.groupName.size() <= 80 &&
+        data.groupNameKey is string && data.groupNameKey.size() >= 1 && data.groupNameKey.size() <= 80 &&
+        data.tiktokUsername is string && data.tiktokUsername.size() >= 1 && data.tiktokUsername.size() <= 80 &&
+        data.tiktokUrl is string && data.tiktokUrl.size() >= 5 && data.tiktokUrl.size() <= 300 &&
+        data.instructions is string && data.instructions.size() >= 2 && data.instructions.size() <= 1000 &&
+        data.taskType in ['like', 'follow', 'like_follow', 'other'] &&
+        data.commission is number && data.commission > 0 && data.commission <= 100000 &&
+        data.startDate is string && data.startDate.size() >= 1 && data.startDate.size() <= 40 &&
+        data.deadline is string && data.deadline.size() >= 1 && data.deadline.size() <= 40 &&
+        data.status in ['active', 'paused', 'expired'] &&
+        data.assignMode in ['all', 'specific'] &&
+        data.assignedUserIds is list && data.assignedUserIds.size() <= 50 &&
+        (data.assignedUserIds.size() == 0 || data.assignedUserIds[0] is string) &&
+        isValidId(data.createdBy) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTaskSubmission(data) {
+      return data.keys().hasAll(['taskId', 'taskTitle', 'tiktokUsername', 'userId', 'userName', 'userEmail', 'commission', 'proofImageData', 'status', 'commissionPaid', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['taskId', 'taskTitle', 'groupName', 'tiktokUsername', 'userId', 'userName', 'userEmail', 'commission', 'proofImageData', 'note', 'status', 'rejectionReason', 'reviewedBy', 'commissionPaid', 'createdAt', 'updatedAt']) &&
+        isValidId(data.taskId) &&
+        data.taskTitle is string && data.taskTitle.size() >= 1 && data.taskTitle.size() <= 140 &&
+        (!('groupName' in data) || (data.groupName is string && data.groupName.size() <= 80)) &&
+        data.tiktokUsername is string && data.tiktokUsername.size() >= 1 && data.tiktokUsername.size() <= 80 &&
+        isValidId(data.userId) &&
+        data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 100 &&
+        data.userEmail is string && data.userEmail.size() >= 3 && data.userEmail.size() <= 150 &&
+        data.commission is number && data.commission > 0 && data.commission <= 100000 &&
+        data.proofImageData is string && data.proofImageData.size() <= 350000 && (data.status == 'claimed' || data.proofImageData.size() >= 10) &&
+        (!('note' in data) || (data.note is string && data.note.size() <= 300)) &&
+        data.status in ['claimed', 'submitted', 'under_review', 'approved', 'rejected'] &&
+        (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300)) &&
+        (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+        data.commissionPaid is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidDeposit(data) {
+      return data.keys().hasAll(['userId', 'userName', 'userEmail', 'amount', 'method', 'senderNumber', 'transactionId', 'proofImageData', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'userName', 'userEmail', 'amount', 'method', 'senderNumber', 'transactionId', 'proofImageData', 'status', 'rejectionReason', 'reviewedBy', 'createdAt', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 100 &&
+        data.userEmail is string && data.userEmail.size() >= 3 && data.userEmail.size() <= 150 &&
+        data.amount is number && data.amount > 0 && data.amount <= 1000000 &&
+        data.method in ['bkash', 'nagad', 'rocket'] &&
+        data.senderNumber is string && data.senderNumber.size() >= 6 && data.senderNumber.size() <= 25 &&
+        data.transactionId is string && data.transactionId.size() >= 3 && data.transactionId.size() <= 80 &&
+        data.proofImageData is string && data.proofImageData.size() >= 10 && data.proofImageData.size() <= 350000 &&
+        data.status in ['pending', 'approved', 'rejected'] &&
+        (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300)) &&
+        (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWithdrawal(data) {
+      return data.keys().hasAll(['userId', 'userName', 'userEmail', 'amount', 'charge', 'netAmount', 'method', 'accountNumber', 'status', 'fundsResolved', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'userName', 'userEmail', 'amount', 'charge', 'netAmount', 'method', 'accountNumber', 'status', 'adminNote', 'reviewedBy', 'fundsResolved', 'createdAt', 'updatedAt']) &&
+        isValidId(data.userId) &&
+        data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 100 &&
+        data.userEmail is string && data.userEmail.size() >= 3 && data.userEmail.size() <= 150 &&
+        data.amount is number && data.amount > 0 && data.amount <= 1000000 &&
+        data.charge is number && data.charge >= 0 && data.charge <= data.amount &&
+        data.netAmount is number && data.netAmount > 0 && data.netAmount <= data.amount &&
+        data.method in ['bkash_personal', 'nagad_personal', 'rocket_personal'] &&
+        data.accountNumber is string && data.accountNumber.size() >= 6 && data.accountNumber.size() <= 25 &&
+        data.status in ['pending', 'processing', 'approved', 'paid', 'rejected'] &&
+        (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300)) &&
+        (!('reviewedBy' in data) || (data.reviewedBy is string && data.reviewedBy.size() <= 128)) &&
+        data.fundsResolved is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTransaction(data) {
+      return data.keys().hasAll(['txCode', 'userId', 'amount', 'type', 'status', 'description', 'createdAt']) &&
+        data.keys().hasOnly(['txCode', 'userId', 'amount', 'type', 'status', 'description', 'referenceId', 'createdAt']) &&
+        data.txCode is string && data.txCode.size() >= 4 && data.txCode.size() <= 64 &&
+        isValidId(data.userId) &&
+        data.amount is number &&
+        data.type in ['deposit', 'withdrawal', 'withdrawal_refund', 'task_commission', 'marketplace_buy', 'marketplace_sell', 'admin_adjustment'] &&
+        data.status in ['pending', 'completed', 'failed', 'refunded'] &&
+        data.description is string && data.description.size() >= 1 && data.description.size() <= 250 &&
+        (!('referenceId' in data) || (data.referenceId is string && data.referenceId.size() <= 128)) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidMarketplaceListing(data) {
+      return data.keys().hasAll(['category', 'listingType', 'sellerId', 'sellerName', 'accountHandle', 'followersCount', 'details', 'price', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['category', 'listingType', 'sellerId', 'sellerName', 'accountHandle', 'profileUrl', 'followersCount', 'accountAgeOrRegion', 'details', 'price', 'proofImageData', 'verificationNote', 'status', 'rejectionReason', 'createdAt', 'updatedAt']) &&
+        data.category in ['tiktok', 'gmail'] &&
+        data.listingType in ['buy_catalog', 'sell_offer'] &&
+        isValidId(data.sellerId) &&
+        data.sellerName is string && data.sellerName.size() >= 1 && data.sellerName.size() <= 100 &&
+        data.accountHandle is string && data.accountHandle.size() >= 2 && data.accountHandle.size() <= 120 &&
+        (!('profileUrl' in data) || (data.profileUrl is string && data.profileUrl.size() <= 300)) &&
+        data.followersCount is number && data.followersCount >= 0 &&
+        (!('accountAgeOrRegion' in data) || (data.accountAgeOrRegion is string && data.accountAgeOrRegion.size() <= 100)) &&
+        data.details is string && data.details.size() >= 5 && data.details.size() <= 1000 &&
+        data.price is number && data.price > 0 && data.price <= 1000000 &&
+        (!('proofImageData' in data) || (data.proofImageData is string && data.proofImageData.size() <= 350000)) &&
+        (!('verificationNote' in data) || (data.verificationNote is string && data.verificationNote.size() <= 300)) &&
+        data.status in ['pending_review', 'approved', 'sold', 'rejected'] &&
+        (!('rejectionReason' in data) || (data.rejectionReason is string && data.rejectionReason.size() <= 300)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMarketplaceOrder(data) {
+      return data.keys().hasAll(['listingId', 'category', 'accountHandle', 'buyerId', 'buyerName', 'buyerEmail', 'sellerId', 'price', 'contactMethod', 'status', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['listingId', 'category', 'accountHandle', 'buyerId', 'buyerName', 'buyerEmail', 'sellerId', 'price', 'contactMethod', 'buyerNote', 'status', 'adminNote', 'createdAt', 'updatedAt']) &&
+        isValidId(data.listingId) &&
+        data.category in ['tiktok', 'gmail'] &&
+        data.accountHandle is string && data.accountHandle.size() >= 2 && data.accountHandle.size() <= 120 &&
+        isValidId(data.buyerId) &&
+        data.buyerName is string && data.buyerName.size() >= 1 && data.buyerName.size() <= 100 &&
+        data.buyerEmail is string && data.buyerEmail.size() >= 3 && data.buyerEmail.size() <= 150 &&
+        isValidId(data.sellerId) &&
+        data.price is number && data.price > 0 && data.price <= 1000000 &&
+        data.contactMethod is string && data.contactMethod.size() >= 2 && data.contactMethod.size() <= 120 &&
+        (!('buyerNote' in data) || (data.buyerNote is string && data.buyerNote.size() <= 400)) &&
+        data.status in ['pending', 'verified', 'completed', 'cancelled'] &&
+        (!('adminNote' in data) || (data.adminNote is string && data.adminNote.size() <= 300)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['userId', 'title', 'message', 'type', 'read', 'createdAt']) &&
+        data.keys().hasOnly(['userId', 'title', 'message', 'type', 'read', 'createdAt']) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 400 &&
+        data.type in ['task', 'deposit', 'withdrawal', 'marketplace', 'system'] &&
+        data.read is bool &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidSetting(data) {
+      return data.keys().hasAll(['key', 'data', 'updatedAt']) &&
+        data.keys().hasOnly(['key', 'data', 'updatedAt']) &&
+        data.key is string && data.key.size() >= 1 && data.key.size() <= 64 &&
+        data.data is map &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['actorId', 'actorEmail', 'action', 'details', 'amountDelta', 'createdAt']) &&
+        data.keys().hasOnly(['actorId', 'actorEmail', 'action', 'targetUserId', 'details', 'amountDelta', 'createdAt']) &&
+        isValidId(data.actorId) &&
+        data.actorEmail is string && data.actorEmail.size() >= 3 && data.actorEmail.size() <= 150 &&
+        data.action is string && data.action.size() >= 1 && data.action.size() <= 120 &&
+        (!('targetUserId' in data) || (data.targetUserId is string && data.targetUserId.size() <= 128)) &&
+        data.details is string && data.details.size() >= 1 && data.details.size() <= 500 &&
+        data.amountDelta is number &&
+        data.createdAt is timestamp;
+    }
+
+    // --- COLLECTION MATCH BLOCKS ---
+
+    // 1. Users (PII isolated)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().uid == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        (incoming().status == 'active' || incoming().status == 'pending');
+      allow update: if isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            (
+              incoming().status == existing().status ||
+              (existing().status == 'pending' && incoming().status == 'active' && isVerifiedUser())
+            ) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'username', 'mobile', 'photoURL', 'language', 'emailVerified', 'status', 'activeGroupName', 'updatedAt'])
+          )
+        );
+      allow delete: if isAdmin() && isValidId(userId);
+    }
+
+    // 2. Admins
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(adminId) &&
+        isValidAdminRole(incoming()) &&
+        incoming().createdAt == request.time &&
+        (isAdmin() || (isBootstrappedAdmin() && adminId == request.auth.uid && incoming().uid == request.auth.uid));
+      allow update: if isValidId(adminId) && isAdmin() && isValidAdminRole(incoming());
+      allow delete: if isValidId(adminId) && isBootstrappedAdmin() && adminId != request.auth.uid;
+    }
+
+    // 3. Wallets (Zero Self-Crediting & Atomic Reservation)
+    match /wallets/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId) &&
+        isValidWallet(incoming()) &&
+        incoming().userId == userId &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().availableBalance == 0 &&
+            incoming().pendingBalance == 0 &&
+            incoming().totalEarned == 0 &&
+            incoming().totalWithdrawn == 0 &&
+            incoming().totalDeposited == 0
+          )
+        );
+      allow update: if isValidId(userId) &&
+        isValidWallet(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            isVerifiedUser() &&
+            isOwner(userId) &&
+            isUserActive(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['availableBalance', 'pendingBalance', 'updatedAt']) &&
+            incoming().availableBalance >= 0 &&
+            incoming().availableBalance < existing().availableBalance &&
+            incoming().pendingBalance > existing().pendingBalance &&
+            (existing().availableBalance - incoming().availableBalance) == (incoming().pendingBalance - existing().pendingBalance) &&
+            incoming().totalEarned == existing().totalEarned &&
+            incoming().totalWithdrawn == existing().totalWithdrawn &&
+            incoming().totalDeposited == existing().totalDeposited
+          )
+        );
+      allow delete: if false;
+    }
+
+    // 4. Tasks
+    match /tasks/{taskId} {
+      allow get: if isValidId(taskId) && isSignedIn() && (
+        isAdmin() ||
+        existing().assignMode == 'all' ||
+        request.auth.uid in existing().assignedUserIds
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.assignMode == 'all' ||
+        request.auth.uid in resource.data.assignedUserIds
+      );
+      allow create: if isValidId(taskId) &&
+        isAdmin() &&
+        isValidTask(incoming()) &&
+        incoming().createdBy == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(taskId) &&
+        isAdmin() &&
+        isValidTask(incoming()) &&
+        incoming().createdBy == existing().createdBy &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if isValidId(taskId) && isAdmin();
+    }
+
+    // 5. Task Submissions (Deterministic ID taskId_userId prevents duplicate payouts)
+    match /taskSubmissions/{submissionId} {
+      allow get: if isValidId(submissionId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(submissionId) &&
+        isVerifiedUser() &&
+        isValidTaskSubmission(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        submissionId == (incoming().taskId + '_' + request.auth.uid) &&
+        (
+          (incoming().status == 'claimed' && incoming().proofImageData.size() == 0) ||
+          (incoming().status == 'submitted' && incoming().proofImageData.size() >= 10)
+        ) &&
+        incoming().commissionPaid == false &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isUserActive(request.auth.uid) &&
+        exists(/databases/$(database)/documents/tasks/$(incoming().taskId)) &&
+        get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.status == 'active' &&
+        incoming().commission == get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.commission &&
+        (
+          get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.assignMode == 'all' ||
+          request.auth.uid in get(/databases/$(database)/documents/tasks/$(incoming().taskId)).data.assignedUserIds
+        );
+      allow update: if isValidId(submissionId) &&
+        isValidTaskSubmission(incoming()) &&
+        incoming().taskId == existing().taskId &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          (isAdmin() && !(existing().commissionPaid == true && incoming().commissionPaid == false)) ||
+          (
+            isVerifiedUser() &&
+            existing().userId == request.auth.uid &&
+            existing().status in ['claimed', 'rejected'] &&
+            existing().commissionPaid == false &&
+            incoming().status == 'submitted' &&
+            incoming().proofImageData.size() >= 10 &&
+            incoming().commissionPaid == false &&
+            incoming().commission == existing().commission &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['proofImageData', 'note', 'status', 'groupName', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(submissionId) && isAdmin();
+    }
+
+    // 6. Deposits
+    match /deposits/{depositId} {
+      allow get: if isValidId(depositId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(depositId) &&
+        isVerifiedUser() &&
+        isValidDeposit(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isUserActive(request.auth.uid);
+      allow update: if isValidId(depositId) &&
+        isAdmin() &&
+        isValidDeposit(incoming()) &&
+        existing().status == 'pending' &&
+        incoming().userId == existing().userId &&
+        incoming().amount == existing().amount &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 7. Withdrawals (Atomic balance reservation check via getAfter)
+    match /withdrawals/{withdrawalId} {
+      allow get: if isValidId(withdrawalId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(withdrawalId) &&
+        isVerifiedUser() &&
+        isValidWithdrawal(incoming()) &&
+        incoming().userId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().fundsResolved == false &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isUserActive(request.auth.uid) &&
+        getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.pendingBalance ==
+          get(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.pendingBalance + incoming().amount &&
+        getAfter(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.availableBalance ==
+          get(/databases/$(database)/documents/wallets/$(request.auth.uid)).data.availableBalance - incoming().amount;
+      allow update: if isValidId(withdrawalId) &&
+        isAdmin() &&
+        isValidWithdrawal(incoming()) &&
+        existing().status != 'paid' &&
+        existing().status != 'rejected' &&
+        incoming().userId == existing().userId &&
+        incoming().amount == existing().amount &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 8. Transactions Ledger (Immutable)
+    match /transactions/{txId} {
+      allow get: if isValidId(txId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(txId) &&
+        isValidTransaction(incoming()) &&
+        incoming().createdAt == request.time && (
+          isAdmin() ||
+          (
+            isVerifiedUser() &&
+            incoming().userId == request.auth.uid &&
+            incoming().type == 'withdrawal' &&
+            incoming().status == 'pending'
+          )
+        );
+      allow update: if isValidId(txId) && isAdmin() && isValidTransaction(incoming()) && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt;
+      allow delete: if false;
+    }
+
+    // 9. Marketplace Listings (TikTok & Gmail IDs)
+    match /marketplaceListings/{listingId} {
+      allow get: if isValidId(listingId) && isSignedIn() && (
+        isAdmin() ||
+        existing().status == 'approved' ||
+        existing().sellerId == request.auth.uid
+      );
+      allow list: if isSignedIn() && (
+        isAdmin() ||
+        resource.data.status == 'approved' ||
+        resource.data.sellerId == request.auth.uid
+      );
+      allow create: if isValidId(listingId) &&
+        isVerifiedUser() &&
+        isValidMarketplaceListing(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time && (
+          isAdmin() ||
+          (
+            incoming().sellerId == request.auth.uid &&
+            incoming().listingType == 'sell_offer' &&
+            incoming().status == 'pending_review' &&
+            isUserActive(request.auth.uid)
+          )
+        );
+      allow update: if isValidId(listingId) &&
+        isValidMarketplaceListing(incoming()) &&
+        incoming().sellerId == existing().sellerId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        isAdmin();
+      allow delete: if isValidId(listingId) && isAdmin();
+    }
+
+    // 10. Marketplace Orders
+    match /marketplaceOrders/{orderId} {
+      allow get: if isValidId(orderId) && (
+        isAdmin() ||
+        (isSignedIn() && (existing().buyerId == request.auth.uid || existing().sellerId == request.auth.uid))
+      );
+      allow list: if isAdmin() || (isSignedIn() && (resource.data.buyerId == request.auth.uid || resource.data.sellerId == request.auth.uid));
+      allow create: if isValidId(orderId) &&
+        isVerifiedUser() &&
+        isValidMarketplaceOrder(incoming()) &&
+        incoming().buyerId == request.auth.uid &&
+        incoming().status == 'pending' &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        isUserActive(request.auth.uid) &&
+        exists(/databases/$(database)/documents/marketplaceListings/$(incoming().listingId)) &&
+        get(/databases/$(database)/documents/marketplaceListings/$(incoming().listingId)).data.status == 'approved' &&
+        incoming().price == get(/databases/$(database)/documents/marketplaceListings/$(incoming().listingId)).data.price &&
+        incoming().sellerId == get(/databases/$(database)/documents/marketplaceListings/$(incoming().listingId)).data.sellerId;
+      allow update: if isValidId(orderId) &&
+        isAdmin() &&
+        isValidMarketplaceOrder(incoming()) &&
+        incoming().buyerId == existing().buyerId &&
+        incoming().listingId == existing().listingId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 11. Notifications
+    match /notifications/{notifId} {
+      allow get: if isValidId(notifId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+      allow list: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isValidId(notifId) &&
+        isValidNotification(incoming()) &&
+        incoming().createdAt == request.time && (
+          isAdmin() ||
+          (isSignedIn() && incoming().userId == request.auth.uid && incoming().type == 'system')
+        );
+      allow update: if isValidId(notifId) &&
+        isValidNotification(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt && (
+          isAdmin() ||
+          (
+            isSignedIn() &&
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['read'])
+          )
+        );
+      allow delete: if isValidId(notifId) && (isAdmin() || (isSignedIn() && existing().userId == request.auth.uid));
+    }
+
+    // 12. Settings (Site, Payments, Marketplace)
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId);
+      allow list: if isSignedIn() || isAdmin();
+      allow create, update: if isValidId(settingId) && isAdmin() && isValidSetting(incoming()) && incoming().updatedAt == request.time;
+      allow delete: if false;
+    }
+
+    // 13. Audit Logs (Admin Only)
+    match /auditLogs/{logId} {
+      allow get, list: if isAdmin();
+      allow create: if isValidId(logId) && isAdmin() && isValidAuditLog(incoming()) && incoming().actorId == request.auth.uid && incoming().createdAt == request.time;
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,301 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Registered user account profile with PII isolated to owner and admins.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "fullName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "username": { "type": "string", "minLength": 3, "maxLength": 40, "pattern": "^[a-zA-Z0-9_.-]+$" },
+        "mobile": { "type": "string", "minLength": 0, "maxLength": 25 },
+        "email": { "type": "string", "format": "email", "minLength": 3, "maxLength": 150 },
+        "referralCode": { "type": "string", "minLength": 0, "maxLength": 32 },
+        "myReferralCode": { "type": "string", "minLength": 4, "maxLength": 32 },
+        "photoURL": { "type": "string", "minLength": 0, "maxLength": 500 },
+        "status": { "type": "string", "enum": ["active", "pending", "blocked", "inactive"] },
+        "emailVerified": { "type": "boolean" },
+        "language": { "type": "string", "enum": ["en", "bn"] },
+        "activeGroupName": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "fullName", "username", "email", "status", "emailVerified", "language", "createdAt", "updatedAt"]
+    },
+    "AdminRole": {
+      "title": "AdminRole",
+      "description": "Authorized admin role and permission record.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "format": "email", "maxLength": 150 },
+        "role": { "type": "string", "enum": ["super_admin", "moderator", "finance_admin"] },
+        "permissions": { "type": "array", "description": "List of permission keys (max 20)" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role", "createdAt"]
+    },
+    "Wallet": {
+      "title": "Wallet",
+      "description": "User financial ledger balances managed strictly via server-verified rules.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "availableBalance": { "type": "number" },
+        "pendingBalance": { "type": "number" },
+        "totalEarned": { "type": "number" },
+        "totalWithdrawn": { "type": "number" },
+        "totalDeposited": { "type": "number" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "availableBalance", "pendingBalance", "totalEarned", "totalWithdrawn", "totalDeposited", "updatedAt"]
+    },
+    "TikTokTask": {
+      "title": "TikTokTask",
+      "description": "Admin-assigned TikTok engagement task gated by daily Group Name.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "minLength": 2, "maxLength": 140 },
+        "groupName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "groupNameKey": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "tiktokUsername": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "tiktokUrl": { "type": "string", "minLength": 5, "maxLength": 300 },
+        "instructions": { "type": "string", "minLength": 2, "maxLength": 1000 },
+        "taskType": { "type": "string", "enum": ["like", "follow", "like_follow", "other"] },
+        "commission": { "type": "number" },
+        "startDate": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "deadline": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "status": { "type": "string", "enum": ["active", "paused", "expired"] },
+        "assignMode": { "type": "string", "enum": ["all", "specific"] },
+        "assignedUserIds": { "type": "array", "description": "Targeted user IDs (max 50)" },
+        "createdBy": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "groupName", "groupNameKey", "tiktokUsername", "tiktokUrl", "instructions", "taskType", "commission", "startDate", "deadline", "status", "assignMode", "assignedUserIds", "createdBy", "createdAt", "updatedAt"]
+    },
+    "TaskSubmission": {
+      "title": "TaskSubmission",
+      "description": "User project claim and proof submission for a TikTok task. Document ID is taskId_userId to prevent duplicate payouts.",
+      "type": "object",
+      "properties": {
+        "taskId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "taskTitle": { "type": "string", "minLength": 1, "maxLength": 140 },
+        "groupName": { "type": "string", "minLength": 0, "maxLength": 80 },
+        "tiktokUsername": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "userEmail": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "commission": { "type": "number" },
+        "proofImageData": { "type": "string", "minLength": 0, "maxLength": 350000 },
+        "note": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "status": { "type": "string", "enum": ["claimed", "submitted", "under_review", "approved", "rejected"] },
+        "rejectionReason": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "reviewedBy": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "commissionPaid": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["taskId", "taskTitle", "tiktokUsername", "userId", "userName", "userEmail", "commission", "proofImageData", "status", "commissionPaid", "createdAt", "updatedAt"]
+    },
+    "DepositRequest": {
+      "title": "DepositRequest",
+      "description": "User deposit verification request via bKash, Nagad, or Rocket.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "userEmail": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "amount": { "type": "number" },
+        "method": { "type": "string", "enum": ["bkash", "nagad", "rocket"] },
+        "senderNumber": { "type": "string", "minLength": 6, "maxLength": 25 },
+        "transactionId": { "type": "string", "minLength": 3, "maxLength": 80 },
+        "proofImageData": { "type": "string", "minLength": 10, "maxLength": 350000 },
+        "status": { "type": "string", "enum": ["pending", "approved", "rejected"] },
+        "rejectionReason": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "reviewedBy": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "userEmail", "amount", "method", "senderNumber", "transactionId", "proofImageData", "status", "createdAt", "updatedAt"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "User withdrawal request with reserved wallet funds.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "userEmail": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "amount": { "type": "number" },
+        "charge": { "type": "number" },
+        "netAmount": { "type": "number" },
+        "method": { "type": "string", "enum": ["bkash_personal", "nagad_personal", "rocket_personal"] },
+        "accountNumber": { "type": "string", "minLength": 6, "maxLength": 25 },
+        "status": { "type": "string", "enum": ["pending", "processing", "approved", "paid", "rejected"] },
+        "adminNote": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "reviewedBy": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "fundsResolved": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userName", "userEmail", "amount", "charge", "netAmount", "method", "accountNumber", "status", "fundsResolved", "createdAt", "updatedAt"]
+    },
+    "TransactionLedger": {
+      "title": "TransactionLedger",
+      "description": "Immutable financial transaction record.",
+      "type": "object",
+      "properties": {
+        "txCode": { "type": "string", "minLength": 4, "maxLength": 64 },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal", "withdrawal_refund", "task_commission", "marketplace_buy", "marketplace_sell", "admin_adjustment"] },
+        "status": { "type": "string", "enum": ["pending", "completed", "failed", "refunded"] },
+        "description": { "type": "string", "minLength": 1, "maxLength": 250 },
+        "referenceId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["txCode", "userId", "amount", "type", "status", "description", "createdAt"]
+    },
+    "MarketplaceListing": {
+      "title": "MarketplaceListing",
+      "description": "TikTok ID or Gmail ID buy/sell listing without sensitive credentials.",
+      "type": "object",
+      "properties": {
+        "category": { "type": "string", "enum": ["tiktok", "gmail"] },
+        "listingType": { "type": "string", "enum": ["buy_catalog", "sell_offer"] },
+        "sellerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "sellerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "accountHandle": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "profileUrl": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "followersCount": { "type": "number" },
+        "accountAgeOrRegion": { "type": "string", "minLength": 0, "maxLength": 100 },
+        "details": { "type": "string", "minLength": 5, "maxLength": 1000 },
+        "price": { "type": "number" },
+        "proofImageData": { "type": "string", "minLength": 0, "maxLength": 350000 },
+        "verificationNote": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "status": { "type": "string", "enum": ["pending_review", "approved", "sold", "rejected"] },
+        "rejectionReason": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["category", "listingType", "sellerId", "sellerName", "accountHandle", "followersCount", "details", "price", "status", "createdAt", "updatedAt"]
+    },
+    "MarketplaceOrder": {
+      "title": "MarketplaceOrder",
+      "description": "Escrow buy request for TikTok ID or Gmail ID.",
+      "type": "object",
+      "properties": {
+        "listingId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "category": { "type": "string", "enum": ["tiktok", "gmail"] },
+        "accountHandle": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "buyerId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "buyerName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "buyerEmail": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "sellerId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "price": { "type": "number" },
+        "contactMethod": { "type": "string", "minLength": 2, "maxLength": 120 },
+        "buyerNote": { "type": "string", "minLength": 0, "maxLength": 400 },
+        "status": { "type": "string", "enum": ["pending", "verified", "completed", "cancelled"] },
+        "adminNote": { "type": "string", "minLength": 0, "maxLength": 300 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["listingId", "category", "accountHandle", "buyerId", "buyerName", "buyerEmail", "sellerId", "price", "contactMethod", "status", "createdAt", "updatedAt"]
+    },
+    "AppNotification": {
+      "title": "AppNotification",
+      "description": "In-app user notification.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 400 },
+        "type": { "type": "string", "enum": ["task", "deposit", "withdrawal", "marketplace", "system"] },
+        "read": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "title", "message", "type", "read", "createdAt"]
+    },
+    "PlatformSetting": {
+      "title": "PlatformSetting",
+      "description": "Website, payment, and marketplace settings configurable by admins.",
+      "type": "object",
+      "properties": {
+        "key": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "data": { "type": "object" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["key", "data", "updatedAt"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Admin financial and security activity log.",
+      "type": "object",
+      "properties": {
+        "actorId": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "actorEmail": { "type": "string", "minLength": 3, "maxLength": 150 },
+        "action": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "targetUserId": { "type": "string", "minLength": 0, "maxLength": 128 },
+        "details": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "amountDelta": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["actorId", "actorEmail", "action", "details", "amountDelta", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user account profiles."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRole" },
+      "description": "Admin authorization registry."
+    },
+    "/wallets/{userId}": {
+      "schema": { "$ref": "#/entities/Wallet" },
+      "description": "User financial wallets."
+    },
+    "/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/TikTokTask" },
+      "description": "Admin-assigned TikTok tasks."
+    },
+    "/taskSubmissions/{submissionId}": {
+      "schema": { "$ref": "#/entities/TaskSubmission" },
+      "description": "User task completion proofs."
+    },
+    "/deposits/{depositId}": {
+      "schema": { "$ref": "#/entities/DepositRequest" },
+      "description": "User deposit verification requests."
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": { "$ref": "#/entities/WithdrawalRequest" },
+      "description": "User withdrawal requests."
+    },
+    "/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/TransactionLedger" },
+      "description": "Immutable financial transaction ledger."
+    },
+    "/marketplaceListings/{listingId}": {
+      "schema": { "$ref": "#/entities/MarketplaceListing" },
+      "description": "TikTok ID and Gmail ID marketplace listings."
+    },
+    "/marketplaceOrders/{orderId}": {
+      "schema": { "$ref": "#/entities/MarketplaceOrder" },
+      "description": "TikTok ID and Gmail ID escrow purchase requests."
+    },
+    "/notifications/{notifId}": {
+      "schema": { "$ref": "#/entities/AppNotification" },
+      "description": "User in-app notifications."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/PlatformSetting" },
+      "description": "Site, payment, and marketplace configuration documents."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Admin audit trail logs."
+    }
+  }
+}
